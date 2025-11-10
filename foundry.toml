@@ -5,6 +5,7 @@ libs = ["lib"]
 evm_version = "paris"
 optimizer = true
 optimizer_runs = 200
+solc_version = "0.8.30"
 remappings = [
   "@openzeppelin/=lib/openzeppelin-contracts/",
   "@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/",
@@ -15,3 +16,5 @@ remappings = [
 ]   
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC_URL}"
+
+
