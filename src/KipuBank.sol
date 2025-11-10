@@ -165,12 +165,10 @@ contract KipuBank is Ownable, Pausable {
     ) Ownable(initialOwner) {
         if (capWei == 0) revert noCapWei();
         if (maxTransactions == 0) revert noTransactions();
-
         WITHDRAW_MAX = capWei;
         BANKCAP = maxTransactions;
         ETHUSDFEED = priceFeed;
         BANKUSDCAP = bankUsdCap_;
-
         USDC = usdc_;
         KGLD = kgld_;
         UNISWAPV2ROUTER = router_;
@@ -207,8 +205,9 @@ contract KipuBank is Ownable, Pausable {
      * @dev Internal function to check transaction count limit
      */
     function _underTxCap() internal view {
-        if (transactionsCounter >= BANKCAP) {
-            revert maxTransactionsLimit(transactionsCounter, BANKCAP);
+        uint256 currentCounter = transactionsCounter;
+        if (currentCounter >= BANKCAP) {
+            revert maxTransactionsLimit(currentCounter, BANKCAP);
         }
     }
 
@@ -340,9 +339,10 @@ contract KipuBank is Ownable, Pausable {
      * @dev Internal function to check USD liability cap compliance
      */
     function _underUsdCap(uint256 weiAmount) internal view {
-        uint256 addUsd = _weiToUsd(weiAmount);
         if (BANKUSDCAP != 0) {
-            uint256 newLiability = bankUsdLiabilities + addUsd;
+            uint256 addUsd = _weiToUsd(weiAmount);
+            uint256 currentLiabilities = bankUsdLiabilities;
+            uint256 newLiability = currentLiabilities + addUsd;
             if (newLiability > BANKUSDCAP) {
                 revert bankUsdCapExceeded(newLiability, BANKUSDCAP);
             }
@@ -363,8 +363,11 @@ contract KipuBank is Ownable, Pausable {
         countDeposit
         whenNotPaused
     {
-        balances[msg.sender] += msg.value;
-        unchecked { bankUsdLiabilities += _weiToUsd(msg.value); }
+        uint256 currentBalance = balances[msg.sender];
+        balances[msg.sender] = currentBalance + msg.value;
+        uint256 currentLiabilities = bankUsdLiabilities;
+        unchecked { bankUsdLiabilities = currentLiabilities + _weiToUsd(msg.value); }
+        
         emit depositDone(msg.sender, msg.value);
     }
 
@@ -384,7 +387,9 @@ contract KipuBank is Ownable, Pausable {
     {
         _debit(msg.sender, value);
         uint256 subUsd = _weiToUsd(value);
-        unchecked { bankUsdLiabilities = subUsd > bankUsdLiabilities ? 0 : bankUsdLiabilities - subUsd; }
+        uint256 currentLiabilities = bankUsdLiabilities;
+        unchecked { bankUsdLiabilities = subUsd > currentLiabilities ? 0 : currentLiabilities - subUsd; }
+        
         (bool ok, ) = msg.sender.call{value: value}("");
         if (!ok) revert transactionFailed();
         emit withdrawalDone(msg.sender, value);
@@ -429,7 +434,6 @@ contract KipuBank is Ownable, Pausable {
     function _getEthUsdPrice() internal view returns (uint256 price) {
         (, int256 answer,,,) = ETHUSDFEED.latestRoundData();
         if (answer <= 0) revert invalidPrice();
-
         price = uint256(answer);
     }
 
@@ -449,7 +453,8 @@ contract KipuBank is Ownable, Pausable {
      * @param amount The amount of USDC to credit (in contract's internal accounting)
      */
     function _credit(address user, uint256 amount) internal {
-        erc20Balances[USDC][user] += amount;
+        uint256 currentBalance = erc20Balances[USDC][user];
+        erc20Balances[USDC][user] = currentBalance + amount;
     }
 
     /**
@@ -469,13 +474,15 @@ contract KipuBank is Ownable, Pausable {
 
         if (address(token) == address(KGLD)) {
             token.safeTransferFrom(msg.sender, address(this), amount);
-            erc20Balances[token][msg.sender] += amount;
+            uint256 currentBalance = erc20Balances[token][msg.sender];
+            erc20Balances[token][msg.sender] = currentBalance + amount;
             emit erc20DepositDone(address(token), msg.sender, amount);
             return;
         }
 
         uint256 usdcOut = _swapInToUsdc(token, amount);
-        erc20Balances[USDC][msg.sender] += usdcOut * 1e12;
+        uint256 currentUsdcBalance = erc20Balances[USDC][msg.sender];
+        erc20Balances[USDC][msg.sender] = currentUsdcBalance + (usdcOut * 1e12);
 
         emit erc20DepositDone(address(token), msg.sender, amount);
     }
@@ -497,13 +504,12 @@ contract KipuBank is Ownable, Pausable {
         if (address(token) != address(USDC) && address(token) != address(KGLD)) {
             revert OnlyUSDCOrKGLD();
         }
-        unchecked { erc20Balances[token][msg.sender] = erc20Balances[token][msg.sender] - amount; }
-        
+        uint256 currentBalance = erc20Balances[token][msg.sender];
+        unchecked { erc20Balances[token][msg.sender] = currentBalance - amount; }
         uint256 transferAmount = amount;
         if (address(token) == address(USDC)) {
             transferAmount = amount / 1e12;
         }
-        
         token.safeTransfer(msg.sender, transferAmount);
         emit erc20WithdrawalDone(address(token), msg.sender, amount);
     }
